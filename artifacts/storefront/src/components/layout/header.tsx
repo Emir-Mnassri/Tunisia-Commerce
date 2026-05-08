@@ -76,8 +76,8 @@ export function Header() {
       {/* Mobile Side Drawer */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent
-          side="right"
-          className="z-50 w-[300px] sm:w-[340px] p-0 flex flex-col bg-background border-l border-border"
+          side="left"
+          className="z-50 w-[300px] sm:w-[340px] p-0 flex flex-col bg-background border-r border-border"
           data-testid="mobile-drawer"
         >
           {/* Drawer header */}
