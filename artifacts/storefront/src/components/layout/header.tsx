@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { ShoppingBag, Menu, Search, X, Home, ShoppingBag as ShopIcon, Tag, ShoppingCart } from "lucide-react";
+import { ShoppingBag, Menu, Search, Home, ShoppingBag as ShopIcon, Tag, ShoppingCart } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -81,22 +81,12 @@ export function Header() {
           data-testid="mobile-drawer"
         >
           {/* Drawer header */}
-          <SheetHeader className="flex flex-row items-center justify-between px-6 py-5 border-b border-border shrink-0">
+          <SheetHeader className="px-6 py-5 border-b border-border shrink-0">
             <SheetTitle asChild>
               <span className="font-serif text-xl font-bold tracking-tight">
                 Maison <span className="text-primary">Marsa</span>
               </span>
             </SheetTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setOpen(false)}
-              aria-label="Fermer le menu"
-              className="hover:bg-accent hover:text-primary -mr-2"
-              data-testid="button-close-drawer"
-            >
-              <X className="w-5 h-5" />
-            </Button>
           </SheetHeader>
 
           {/* Nav links */}
