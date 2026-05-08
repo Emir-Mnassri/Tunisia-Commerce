@@ -3,20 +3,27 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Tunisian E-Commerce API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: categories
+    description: Product categories
+  - name: products
+    description: Products
+  - name: orders
+    description: Orders and checkout
+  - name: payment
+    description: Payment (Flouci mock)
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +31,197 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List all categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List products with optional filtering
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: search
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: featured
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: page
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: limit
+          in: query
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Paginated list of products
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductsPage"
+
+  /products/featured:
+    get:
+      operationId: getFeaturedProducts
+      tags: [products]
+      summary: Get featured products
+      responses:
+        "200":
+          description: Featured products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+
+  /products/stats:
+    get:
+      operationId: getProductStats
+      tags: [products]
+      summary: Get product stats by category
+      responses:
+        "200":
+          description: Product stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductStats"
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get a single product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /orders:
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create a new order (checkout)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutInput"
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /payment/flouci/initiate:
+    post:
+      operationId: initiateFlouci
+      tags: [payment]
+      summary: Initiate Flouci mock payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FlouciInitInput"
+      responses:
+        "200":
+          description: Flouci payment initiated (mock)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlouciInitResult"
+
+  /payment/flouci/verify/{paymentId}:
+    get:
+      operationId: verifyFlouci
+      tags: [payment]
+      summary: Verify Flouci mock payment status
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlouciVerifyResult"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +232,269 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: ["string", "null"]
+        productCount:
+          type: integer
+      required:
+        - id
+        - name
+        - slug
+        - productCount
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: ["string", "null"]
+        price:
+          type: number
+        imageUrl:
+          type: ["string", "null"]
+        categoryId:
+          type: ["integer", "null"]
+        categoryName:
+          type: ["string", "null"]
+        stock:
+          type: integer
+        featured:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - slug
+        - price
+        - stock
+        - featured
+        - createdAt
+
+    ProductsPage:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
+      required:
+        - products
+        - total
+        - page
+        - limit
+        - totalPages
+
+    ProductStats:
+      type: object
+      properties:
+        totalProducts:
+          type: integer
+        totalCategories:
+          type: integer
+        featuredCount:
+          type: integer
+        byCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryStat"
+      required:
+        - totalProducts
+        - totalCategories
+        - featuredCount
+        - byCategory
+
+    CategoryStat:
+      type: object
+      properties:
+        categoryId:
+          type: integer
+        categoryName:
+          type: string
+        count:
+          type: integer
+      required:
+        - categoryId
+        - categoryName
+        - count
+
+    LineItem:
+      type: object
+      properties:
+        productId:
+          type: integer
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        totalPrice:
+          type: number
+      required:
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+        - totalPrice
+
+    CheckoutInput:
+      type: object
+      properties:
+        customerName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        governorate:
+          type: string
+        city:
+          type: string
+        paymentMethod:
+          type: string
+          enum: ["cash_on_delivery", "flouci"]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+        notes:
+          type: ["string", "null"]
+      required:
+        - customerName
+        - email
+        - phone
+        - address
+        - governorate
+        - city
+        - paymentMethod
+        - items
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        customerName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        governorate:
+          type: string
+        city:
+          type: string
+        paymentMethod:
+          type: string
+        status:
+          type: string
+        subtotal:
+          type: number
+        shippingFee:
+          type: number
+        total:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+        notes:
+          type: ["string", "null"]
+        flouciPaymentId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - customerName
+        - email
+        - phone
+        - address
+        - governorate
+        - city
+        - paymentMethod
+        - status
+        - subtotal
+        - shippingFee
+        - total
+        - items
+        - createdAt
+
+    FlouciInitInput:
+      type: object
+      properties:
+        orderId:
+          type: integer
+        amount:
+          type: number
+        successUrl:
+          type: string
+        failUrl:
+          type: string
+      required:
+        - orderId
+        - amount
+        - successUrl
+        - failUrl
+
+    FlouciInitResult:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        redirectUrl:
+          type: string
+        status:
+          type: string
+      required:
+        - paymentId
+        - redirectUrl
+        - status
+
+    FlouciVerifyResult:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        status:
+          type: string
+        orderId:
+          type: ["integer", "null"]
+      required:
+        - paymentId
+        - status
