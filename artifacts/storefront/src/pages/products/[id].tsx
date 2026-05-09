@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
-import { useGetProduct, getGetProductQueryKey, useListProducts } from "@workspace/api-client-react";
+import { useGetProduct, getGetProductQueryKey, useListProducts, getListProductsQueryKey } from "@workspace/api-client-react";
 import { useCart } from "@/lib/cart-context";
 import { PageTransition } from "@/components/layout/page-transition";
 import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/format";
-import { Minus, Plus, ShoppingBag, ArrowLeft, CheckCircle2, ShieldCheck, Truck } from "lucide-react";
+import { Minus, Plus, ShoppingBag, ArrowLeft, CheckCircle2, ShieldCheck, Truck, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -23,12 +23,11 @@ export default function ProductDetail() {
     }
   });
 
-  const { data: relatedProducts } = useListProducts({ 
-    categoryId: product?.categoryId || undefined,
-    limit: 4
-  }, {
+  const relatedParams = { categoryId: product?.categoryId || undefined, limit: 4 };
+  const { data: relatedProducts } = useListProducts(relatedParams, {
     query: {
-      enabled: !!product?.categoryId
+      enabled: !!product?.categoryId,
+      queryKey: getListProductsQueryKey(relatedParams),
     }
   });
 

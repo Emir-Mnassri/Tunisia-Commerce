@@ -12,6 +12,7 @@ export const productsTable = pgTable("products", {
   imageUrl: text("image_url"),
   categoryId: integer("category_id").references(() => categoriesTable.id),
   stock: integer("stock").notNull().default(0),
+  sku: text("sku"),
   featured: boolean("featured").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

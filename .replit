@@ -35,6 +35,7 @@ externalPort = 3000
 
 [userenv.shared]
 FLOUCI_MOCK_TOKEN = "mock_flouci_dev_token_2024"
+ADMIN_SECRET = "admin_maison_marsa_2025"
 
 [nix]
 channel = "stable-25_05"

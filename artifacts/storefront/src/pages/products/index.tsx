@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { useListProducts, useListCategories } from "@workspace/api-client-react";
+import { useListProducts, useListCategories, getListProductsQueryKey } from "@workspace/api-client-react";
 import { ProductCard, ProductCardSkeleton } from "@/components/product-card";
 import { PageTransition } from "@/components/layout/page-transition";
 import { Button } from "@/components/ui/button";
@@ -22,12 +22,16 @@ export default function Products() {
 
   const { data: categories } = useListCategories();
   
-  const { data: productsData, isLoading, isPreviousData } = useListProducts({
+  const listParams = {
     page,
     limit: 12,
     search: search || undefined,
     categoryId: categoryId !== "all" ? Number(categoryId) : undefined,
-  }, { query: { keepPreviousData: true } });
+  };
+  const { data: productsData, isLoading, isPlaceholderData } = useListProducts(listParams, {
+    query: { placeholderData: (prev) => prev, queryKey: getListProductsQueryKey(listParams) },
+  });
+  const isPreviousData = isPlaceholderData;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

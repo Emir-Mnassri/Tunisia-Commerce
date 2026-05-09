@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, ordersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, ordersTable, productsTable } from "@workspace/db";
+import { eq, inArray, sql } from "drizzle-orm";
 import { CreateOrderBody, GetOrderParams, GetOrderResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -45,35 +45,88 @@ router.post("/orders", async (req, res): Promise<void> => {
   const { customerName, email, phone, address, governorate, city, paymentMethod, items, notes } =
     parsed.data;
 
-  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const shippingFee = paymentMethod === "cash_on_delivery" ? SHIPPING_FEE_COD : 0;
-  const total = subtotal + shippingFee;
+  try {
+    // ── Security: fetch product prices & stock from DB (never trust client prices) ──
+    const productIds = items.map((item) => item.productId);
+    const dbProducts = await db
+      .select()
+      .from(productsTable)
+      .where(inArray(productsTable.id, productIds));
 
-  const [order] = await db
-    .insert(ordersTable)
-    .values({
-      customerName,
-      email,
-      phone,
-      address,
-      governorate,
-      city,
-      paymentMethod,
-      status: "pending",
-      subtotal: subtotal.toFixed(3),
-      shippingFee: shippingFee.toFixed(3),
-      total: total.toFixed(3),
-      items,
-      notes: notes ?? null,
-    })
-    .returning();
+    const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
-  if (!order) {
-    res.status(500).json({ error: "Erreur lors de la création de la commande" });
-    return;
+    // Validate stock for every item
+    for (const item of items) {
+      const product = productMap.get(item.productId);
+      if (!product) {
+        res.status(400).json({ error: `Produit ID ${item.productId} introuvable` });
+        return;
+      }
+      if (product.stock < item.quantity) {
+        res
+          .status(400)
+          .json({
+            error: `Stock insuffisant pour "${product.name}" (disponible: ${product.stock})`,
+          });
+        return;
+      }
+    }
+
+    // Compute prices server-side
+    const serverItems = items.map((item) => {
+      const product = productMap.get(item.productId)!;
+      const unitPrice = Number(product.price);
+      const totalPrice = parseFloat((unitPrice * item.quantity).toFixed(3));
+      return {
+        productId: item.productId,
+        productName: product.name,
+        quantity: item.quantity,
+        unitPrice,
+        totalPrice,
+      };
+    });
+
+    const subtotal = serverItems.reduce((sum, item) => sum + item.totalPrice, 0);
+    const shippingFee = paymentMethod === "cash_on_delivery" ? SHIPPING_FEE_COD : 0;
+    const total = subtotal + shippingFee;
+
+    const [order] = await db
+      .insert(ordersTable)
+      .values({
+        customerName,
+        email,
+        phone,
+        address,
+        governorate,
+        city,
+        paymentMethod,
+        status: "pending",
+        subtotal: subtotal.toFixed(3),
+        shippingFee: shippingFee.toFixed(3),
+        total: total.toFixed(3),
+        items: serverItems,
+        notes: notes ?? null,
+      })
+      .returning();
+
+    if (!order) {
+      res.status(500).json({ error: "Erreur lors de la création de la commande" });
+      return;
+    }
+
+    // Decrement stock atomically per item
+    for (const item of serverItems) {
+      await db
+        .update(productsTable)
+        .set({ stock: sql`${productsTable.stock} - ${item.quantity}` })
+        .where(eq(productsTable.id, item.productId));
+    }
+
+    res.status(201).json(GetOrderResponse.parse(formatOrder(order)));
+  } catch (err) {
+    req.log.error({ err }, "Error creating order");
+    res.status(500).json({ error: "Erreur interne du serveur" });
   }
-
-  res.status(201).json(GetOrderResponse.parse(formatOrder(order)));
 });
 
 router.get("/orders/:id", async (req, res): Promise<void> => {
@@ -84,17 +137,22 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [order] = await db
-    .select()
-    .from(ordersTable)
-    .where(eq(ordersTable.id, params.data.id));
+  try {
+    const [order] = await db
+      .select()
+      .from(ordersTable)
+      .where(eq(ordersTable.id, params.data.id));
 
-  if (!order) {
-    res.status(404).json({ error: "Commande introuvable" });
-    return;
+    if (!order) {
+      res.status(404).json({ error: "Commande introuvable" });
+      return;
+    }
+
+    res.json(GetOrderResponse.parse(formatOrder(order)));
+  } catch (err) {
+    req.log.error({ err }, "Error fetching order");
+    res.status(500).json({ error: "Erreur interne du serveur" });
   }
-
-  res.json(GetOrderResponse.parse(formatOrder(order)));
 });
 
 export default router;
