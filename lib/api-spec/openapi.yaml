@@ -272,6 +272,10 @@ components:
           type: ["string", "null"]
         price:
           type: number
+        discountPrice:
+          type: ["number", "null"]
+        isOnSale:
+          type: boolean
         imageUrl:
           type: ["string", "null"]
         categoryId:
@@ -280,6 +284,8 @@ components:
           type: ["string", "null"]
         stock:
           type: integer
+        sku:
+          type: ["string", "null"]
         featured:
           type: boolean
         createdAt:
@@ -289,6 +295,7 @@ components:
         - name
         - slug
         - price
+        - isOnSale
         - stock
         - featured
         - createdAt

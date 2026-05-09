@@ -12,13 +12,20 @@ import {
 
 const router: IRouter = Router();
 
-function formatProduct(p: { id: number; name: string; slug: string; description: string | null; price: string; imageUrl: string | null; categoryId: number | null; categoryName?: string | null; stock: number; sku?: string | null; featured: boolean; createdAt: Date }) {
+function formatProduct(p: {
+  id: number; name: string; slug: string; description: string | null;
+  price: string; discountPrice: string | null; isOnSale: boolean;
+  imageUrl: string | null; categoryId: number | null; categoryName?: string | null;
+  stock: number; sku?: string | null; featured: boolean; createdAt: Date;
+}) {
   return {
     id: p.id,
     name: p.name,
     slug: p.slug,
     description: p.description ?? null,
     price: Number(p.price),
+    discountPrice: p.discountPrice != null ? Number(p.discountPrice) : null,
+    isOnSale: p.isOnSale,
     imageUrl: p.imageUrl ?? null,
     categoryId: p.categoryId ?? null,
     categoryName: p.categoryName ?? null,
@@ -38,10 +45,13 @@ router.get("/products/featured", async (req, res): Promise<void> => {
         slug: productsTable.slug,
         description: productsTable.description,
         price: productsTable.price,
+        discountPrice: productsTable.discountPrice,
+        isOnSale: productsTable.isOnSale,
         imageUrl: productsTable.imageUrl,
         categoryId: productsTable.categoryId,
         categoryName: categoriesTable.name,
         stock: productsTable.stock,
+        sku: productsTable.sku,
         featured: productsTable.featured,
         createdAt: productsTable.createdAt,
       })
@@ -113,10 +123,13 @@ router.get("/products/:id", async (req, res): Promise<void> => {
         slug: productsTable.slug,
         description: productsTable.description,
         price: productsTable.price,
+        discountPrice: productsTable.discountPrice,
+        isOnSale: productsTable.isOnSale,
         imageUrl: productsTable.imageUrl,
         categoryId: productsTable.categoryId,
         categoryName: categoriesTable.name,
         stock: productsTable.stock,
+        sku: productsTable.sku,
         featured: productsTable.featured,
         createdAt: productsTable.createdAt,
       })
@@ -170,10 +183,13 @@ router.get("/products", async (req, res): Promise<void> => {
         slug: productsTable.slug,
         description: productsTable.description,
         price: productsTable.price,
+        discountPrice: productsTable.discountPrice,
+        isOnSale: productsTable.isOnSale,
         imageUrl: productsTable.imageUrl,
         categoryId: productsTable.categoryId,
         categoryName: categoriesTable.name,
         stock: productsTable.stock,
+        sku: productsTable.sku,
         featured: productsTable.featured,
         createdAt: productsTable.createdAt,
       })

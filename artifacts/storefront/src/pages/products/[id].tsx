@@ -171,9 +171,17 @@ export default function ProductDetail() {
               {product.name}
             </h1>
             
-            <p className="text-3xl font-medium text-primary mb-8" data-testid="text-detail-price">
-              {formatPrice(product.price)}
-            </p>
+            {product.isOnSale && product.discountPrice != null && product.discountPrice < product.price ? (
+              <div className="flex items-baseline gap-3 mb-8" data-testid="text-detail-price">
+                <span className="text-3xl font-bold text-red-600">{formatPrice(product.discountPrice)}</span>
+                <span className="text-xl text-muted-foreground line-through">{formatPrice(product.price)}</span>
+                <Badge className="rounded-none bg-red-600 text-white text-xs uppercase tracking-wider">Promo</Badge>
+              </div>
+            ) : (
+              <p className="text-3xl font-medium text-primary mb-8" data-testid="text-detail-price">
+                {formatPrice(product.price)}
+              </p>
+            )}
 
             <div className="prose prose-neutral max-w-none text-muted-foreground leading-relaxed mb-10" data-testid="text-detail-desc">
               {product.description ? (

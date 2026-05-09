@@ -14,12 +14,17 @@ export interface Product {
   description?: string | null;
   price: number;
   /** @nullable */
+  discountPrice?: number | null;
+  isOnSale: boolean;
+  /** @nullable */
   imageUrl?: string | null;
   /** @nullable */
   categoryId?: number | null;
   /** @nullable */
   categoryName?: string | null;
   stock: number;
+  /** @nullable */
+  sku?: string | null;
   featured: boolean;
   createdAt: string;
 }

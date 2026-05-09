@@ -51,6 +51,8 @@ export interface AdminProduct {
   slug: string;
   description: string | null;
   price: number;
+  discountPrice: number | null;
+  isOnSale: boolean;
   imageUrl: string | null;
   categoryId: number | null;
   categoryName: string | null;
@@ -59,6 +61,21 @@ export interface AdminProduct {
   featured: boolean;
   createdAt: string;
 }
+
+export type CreateProductInput = {
+  name: string;
+  description?: string | null;
+  price: number;
+  discountPrice?: number | null;
+  isOnSale?: boolean;
+  imageUrl?: string | null;
+  stock?: number;
+  sku?: string | null;
+  featured?: boolean;
+  categoryId?: number | null;
+};
+
+export type UpdateProductInput = Partial<CreateProductInput>;
 
 export async function fetchAdminStats(token: string): Promise<AdminStats> {
   return handle(await fetch(`${BASE}/api/admin/stats`, { headers: headers(token) }));
@@ -72,30 +89,36 @@ export async function fetchAdminProducts(token: string): Promise<AdminProduct[]>
   return handle(await fetch(`${BASE}/api/admin/products`, { headers: headers(token) }));
 }
 
-export async function updateProductStock(
-  token: string,
-  id: number,
-  stock: number,
-): Promise<{ id: number; stock: number }> {
+export async function createProduct(token: string, data: CreateProductInput): Promise<AdminProduct> {
   return handle(
-    await fetch(`${BASE}/api/admin/products/${id}`, {
-      method: "PUT",
+    await fetch(`${BASE}/api/admin/products`, {
+      method: "POST",
       headers: headers(token),
-      body: JSON.stringify({ stock }),
+      body: JSON.stringify(data),
     }),
   );
 }
 
-export async function updateProductField(
-  token: string,
-  id: number,
-  data: Partial<{ name: string; price: number; sku: string | null; stock: number; featured: boolean }>,
-): Promise<{ id: number; stock: number; name: string; sku: string | null }> {
+export async function updateProduct(token: string, id: number, data: UpdateProductInput): Promise<AdminProduct> {
   return handle(
     await fetch(`${BASE}/api/admin/products/${id}`, {
       method: "PUT",
       headers: headers(token),
       body: JSON.stringify(data),
+    }),
+  );
+}
+
+export async function patchProductStock(
+  token: string,
+  id: number,
+  delta: number,
+): Promise<{ id: number; stock: number }> {
+  return handle(
+    await fetch(`${BASE}/api/admin/products/${id}/stock`, {
+      method: "PATCH",
+      headers: headers(token),
+      body: JSON.stringify({ delta }),
     }),
   );
 }
@@ -122,3 +145,6 @@ export async function updateOrderStatus(
     }),
   );
 }
+
+// Keep legacy compat
+export const updateProductField = updateProduct;
