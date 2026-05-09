@@ -1,7 +1,11 @@
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-function headers(token: string): HeadersInit {
+function jsonHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+}
+
+function multipartHeaders(token: string): HeadersInit {
+    return { Authorization: `Bearer ${token}` };
 }
 
 async function handle<T>(res: Response): Promise<T> {
@@ -10,6 +14,12 @@ async function handle<T>(res: Response): Promise<T> {
     throw new Error((body as { error?: string }).error ?? res.statusText);
   }
   return res.json() as Promise<T>;
+}
+
+export type UserRole = "SUPER_ADMIN" | "STAFF";
+
+export async function fetchUserRole(token: string): Promise<{ role: UserRole }> {
+  return handle(await fetch(`${BASE}/api/admin/me`, { headers: jsonHeaders(token) }));
 }
 
 export interface AdminStats {
@@ -62,49 +72,49 @@ export interface AdminProduct {
   createdAt: string;
 }
 
-export type CreateProductInput = {
+// This type is for the form state, which will include the File object
+export type ProductFormData = {
   name: string;
   description?: string | null;
   price: number;
   discountPrice?: number | null;
   isOnSale?: boolean;
-  imageUrl?: string | null;
+  image?: File | null;
   stock?: number;
   sku?: string | null;
   featured?: boolean;
   categoryId?: number | null;
 };
 
-export type UpdateProductInput = Partial<CreateProductInput>;
 
 export async function fetchAdminStats(token: string): Promise<AdminStats> {
-  return handle(await fetch(`${BASE}/api/admin/stats`, { headers: headers(token) }));
+  return handle(await fetch(`${BASE}/api/admin/stats`, { headers: jsonHeaders(token) }));
 }
 
 export async function fetchAdminOrders(token: string): Promise<AdminOrder[]> {
-  return handle(await fetch(`${BASE}/api/admin/orders`, { headers: headers(token) }));
+  return handle(await fetch(`${BASE}/api/admin/orders`, { headers: jsonHeaders(token) }));
 }
 
 export async function fetchAdminProducts(token: string): Promise<AdminProduct[]> {
-  return handle(await fetch(`${BASE}/api/admin/products`, { headers: headers(token) }));
+  return handle(await fetch(`${BASE}/api/admin/products`, { headers: jsonHeaders(token) }));
 }
 
-export async function createProduct(token: string, data: CreateProductInput): Promise<AdminProduct> {
+export async function createProduct(token: string, data: FormData): Promise<AdminProduct> {
   return handle(
     await fetch(`${BASE}/api/admin/products`, {
       method: "POST",
-      headers: headers(token),
-      body: JSON.stringify(data),
+      headers: multipartHeaders(token),
+      body: data,
     }),
   );
 }
 
-export async function updateProduct(token: string, id: number, data: UpdateProductInput): Promise<AdminProduct> {
+export async function updateProduct(token: string, id: number, data: FormData): Promise<AdminProduct> {
   return handle(
     await fetch(`${BASE}/api/admin/products/${id}`, {
       method: "PUT",
-      headers: headers(token),
-      body: JSON.stringify(data),
+      headers: multipartHeaders(token),
+      body: data,
     }),
   );
 }
@@ -117,7 +127,7 @@ export async function patchProductStock(
   return handle(
     await fetch(`${BASE}/api/admin/products/${id}/stock`, {
       method: "PATCH",
-      headers: headers(token),
+      headers: jsonHeaders(token),
       body: JSON.stringify({ delta }),
     }),
   );
@@ -127,7 +137,7 @@ export async function deleteProduct(token: string, id: number): Promise<void> {
   await handle(
     await fetch(`${BASE}/api/admin/products/${id}`, {
       method: "DELETE",
-      headers: headers(token),
+      headers: jsonHeaders(token),
     }),
   );
 }
@@ -140,11 +150,8 @@ export async function updateOrderStatus(
   return handle(
     await fetch(`${BASE}/api/admin/orders/${id}/status`, {
       method: "PUT",
-      headers: headers(token),
+      headers: jsonHeaders(token),
       body: JSON.stringify({ status }),
     }),
   );
 }
-
-// Keep legacy compat
-export const updateProductField = updateProduct;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,8 @@ import {
   fetchAdminStats, fetchAdminOrders, fetchAdminProducts,
   createProduct, updateProduct, patchProductStock, deleteProduct,
   updateOrderStatus,
-  AdminOrder, AdminProduct, CreateProductInput,
+  fetchUserRole, UserRole,
+  AdminOrder, AdminProduct, ProductFormData,
 } from "@/lib/admin-api";
 import { useListCategories } from "@workspace/api-client-react";
 import { generateReceipt } from "@/lib/generate-receipt";
@@ -108,9 +109,11 @@ function StatCard({ title, value, icon: Icon, sub }: { title: string; value: str
 }
 
 // ─── Product Form Dialog ────────────────────────────────────────────────────────
-const EMPTY_FORM: CreateProductInput & { id?: number } = {
+
+type FormState = ProductFormData & { imageUrl?: string | null };
+const EMPTY_FORM: FormState = {
   name: "", description: "", price: 0, discountPrice: null,
-  isOnSale: false, imageUrl: "", stock: 0, sku: "", featured: false, categoryId: null,
+  isOnSale: false, image: null, imageUrl: null, stock: 0, sku: "", featured: false, categoryId: null,
 };
 
 function ProductFormDialog({
@@ -120,25 +123,8 @@ function ProductFormDialog({
 }) {
   const qc = useQueryClient();
   const { data: categories = [] } = useListCategories();
-  const [form, setForm] = useState<typeof EMPTY_FORM>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState("");
-
-  // Populate form when editing
-  const prevOpen = open;
-  if (prevOpen && !form.name && editProduct) {
-    setForm({
-      name: editProduct.name,
-      description: editProduct.description ?? "",
-      price: editProduct.price,
-      discountPrice: editProduct.discountPrice,
-      isOnSale: editProduct.isOnSale,
-      imageUrl: editProduct.imageUrl ?? "",
-      stock: editProduct.stock,
-      sku: editProduct.sku ?? "",
-      featured: editProduct.featured,
-      categoryId: editProduct.categoryId,
-    });
-  }
 
   const handleOpen = useCallback(() => {
     setError("");
@@ -154,6 +140,7 @@ function ProductFormDialog({
         sku: editProduct.sku ?? "",
         featured: editProduct.featured,
         categoryId: editProduct.categoryId,
+        image: null,
       });
     } else {
       setForm({ ...EMPTY_FORM });
@@ -161,24 +148,24 @@ function ProductFormDialog({
   }, [editProduct]);
 
   // Reset on open
-  useState(() => { if (open) handleOpen(); });
+  useEffect(() => { if (open) handleOpen(); }, [open, handleOpen]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload: CreateProductInput = {
-        name: form.name,
-        description: form.description || null,
-        price: Number(form.price),
-        discountPrice: form.discountPrice ? Number(form.discountPrice) : null,
-        isOnSale: form.isOnSale,
-        imageUrl: form.imageUrl || null,
-        stock: Number(form.stock),
-        sku: form.sku || null,
-        featured: form.featured,
-        categoryId: form.categoryId || null,
-      };
-      if (editProduct) return updateProduct(token, editProduct.id, payload);
-      return createProduct(token, payload);
+      const formData = new FormData();
+      Object.entries(form).forEach(([key, value]) => {
+        if (key === 'image' || key === 'imageUrl') return;
+        if (value !== null && value !== undefined) {
+            formData.append(key, String(value));
+        }
+      });
+
+      if (form.image) {
+        formData.append("image", form.image);
+      }
+      
+      if (editProduct) return updateProduct(token, editProduct.id, formData);
+      return createProduct(token, formData);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-products", token] });
@@ -188,8 +175,20 @@ function ProductFormDialog({
     onError: (e: Error) => setError(e.message),
   });
 
-  const set = (field: keyof typeof EMPTY_FORM, value: unknown) =>
+  const set = (field: keyof FormState, value: unknown) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (form.image) {
+        const url = URL.createObjectURL(form.image);
+        setPreviewUrl(url);
+        return () => URL.revokeObjectURL(url); // Cleanup
+    } else {
+        setPreviewUrl(null);
+    }
+  }, [form.image]);
+
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { onClose(); setForm({ ...EMPTY_FORM }); setError(""); } else handleOpen(); }}>
@@ -254,11 +253,21 @@ function ProductFormDialog({
               value={form.stock} onChange={(e) => set("stock", parseInt(e.target.value) || 0)} />
           </div>
 
-          {/* Image URL */}
+          {/* Image Upload */}
           <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">URL de l'image</Label>
-            <Input className="rounded-none mt-1" value={form.imageUrl ?? ""}
-              onChange={(e) => set("imageUrl", e.target.value)} placeholder="https://images.unsplash.com/..." />
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Image</Label>
+            <Input
+                className="rounded-none mt-1 file:bg-primary file:text-primary-foreground file:border-0 file:rounded-sm file:px-3 file:py-2 file:mr-4 hover:file:bg-primary/90"
+                type="file"
+                accept=".png, .jpg, .jpeg, .webp"
+                onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                        set("image", e.target.files[0]);
+                    } else {
+                        set("image", null);
+                    }
+                }}
+            />
           </div>
 
           {/* Description */}
@@ -282,10 +291,10 @@ function ProductFormDialog({
           </div>
 
           {/* Image preview */}
-          {form.imageUrl && (
+          {(previewUrl || form.imageUrl) && (
             <div className="sm:col-span-2">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground block mb-2">Aperçu</Label>
-              <img src={form.imageUrl} alt="preview" className="h-32 w-auto object-cover border border-border" />
+              <img src={previewUrl ?? form.imageUrl!} alt="preview" className="h-32 w-auto object-cover border border-border" />
             </div>
           )}
         </div>
@@ -307,7 +316,7 @@ function ProductFormDialog({
 }
 
 // ─── Products Table ─────────────────────────────────────────────────────────────
-function ProductsTable({ token }: { token: string }) {
+function ProductsTable({ token, userRole }: { token: string, userRole: UserRole }) {
   const qc = useQueryClient();
   const { data: products = [], isLoading, refetch } = useQuery({
     queryKey: ["admin-products", token],
@@ -333,17 +342,18 @@ function ProductsTable({ token }: { token: string }) {
 
   const openAdd = () => { setEditTarget(null); setDialogOpen(true); };
   const openEdit = (p: AdminProduct) => { setEditTarget(p); setDialogOpen(true); };
+  const canEdit = userRole === "SUPER_ADMIN";
 
   if (isLoading) return <div className="py-12 text-center text-muted-foreground">Chargement...</div>;
 
   return (
     <>
-      <ProductFormDialog
+      {canEdit && <ProductFormDialog
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setEditTarget(null); }}
         token={token}
         editProduct={editTarget}
-      />
+      />}
 
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-muted-foreground">{products.length} produit(s)</p>
@@ -351,9 +361,9 @@ function ProductsTable({ token }: { token: string }) {
           <Button variant="outline" size="sm" className="rounded-none" onClick={() => refetch()}>
             <RefreshCw className="w-3 h-3 mr-2" />Actualiser
           </Button>
-          <Button size="sm" className="rounded-none" onClick={openAdd}>
+          {canEdit && <Button size="sm" className="rounded-none" onClick={openAdd}>
             <PlusCircle className="w-3 h-3 mr-2" />Ajouter un produit
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -366,7 +376,7 @@ function ProductsTable({ token }: { token: string }) {
               <TableHead className="text-xs uppercase tracking-wider">Prix</TableHead>
               <TableHead className="text-xs uppercase tracking-wider text-center">Stock</TableHead>
               <TableHead className="text-xs uppercase tracking-wider">Statut</TableHead>
-              <TableHead className="text-xs uppercase tracking-wider text-right">Actions</TableHead>
+              {canEdit && <TableHead className="text-xs uppercase tracking-wider text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -378,7 +388,7 @@ function ProductsTable({ token }: { token: string }) {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {p.imageUrl
-                        ? <img src={p.imageUrl} alt="" className="w-12 h-12 object-cover shrink-0 border border-border/50" />
+                        ? <img src={`${BASE}${p.imageUrl}`} alt="" className="w-12 h-12 object-cover shrink-0 border border-border/50" />
                         : <div className="w-12 h-12 bg-muted/50 shrink-0 flex items-center justify-center text-xs text-muted-foreground">—</div>
                       }
                       <div className="min-w-0">
@@ -435,7 +445,7 @@ function ProductsTable({ token }: { token: string }) {
                     </div>
                   </TableCell>
 
-                  <TableCell className="text-right">
+                  {canEdit && <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-none" onClick={() => openEdit(p)}>
                         <Pencil className="w-3 h-3" />
@@ -448,7 +458,7 @@ function ProductsTable({ token }: { token: string }) {
                         <Trash2 className="w-3 h-3" />
                       </Button>
                     </div>
-                  </TableCell>
+                  </TableCell>}
                 </TableRow>
               );
             })}
@@ -458,9 +468,9 @@ function ProductsTable({ token }: { token: string }) {
           <div className="py-16 text-center">
             <Package className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
             <p className="text-muted-foreground text-sm">Aucun produit pour le moment</p>
-            <Button size="sm" className="rounded-none mt-4" onClick={openAdd}>
+            {canEdit && <Button size="sm" className="rounded-none mt-4" onClick={openAdd}>
               <PlusCircle className="w-3 h-3 mr-2" />Créer le premier produit
-            </Button>
+            </Button>}
           </div>
         )}
       </div>
@@ -545,12 +555,19 @@ function OrdersTable({ token }: { token: string }) {
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const { data: stats, isLoading, isError } = useQuery({
     queryKey: ["admin-stats", token],
     queryFn: () => fetchAdminStats(token),
     refetchInterval: 30_000,
   });
+
+  const { data: roleData } = useQuery({
+    queryKey: ["user-role", token],
+    queryFn: () => fetchUserRole(token),
+  });
+  const userRole = roleData?.role;
 
   if (isError) { onLogout(); return null; }
 
@@ -601,7 +618,7 @@ function Dashboard({ token, onLogout }: { token: string; onLogout: () => void })
           </TabsList>
 
           <TabsContent value="products">
-            <ProductsTable token={token} />
+            {userRole && <ProductsTable token={token} userRole={userRole} />}
           </TabsContent>
 
           <TabsContent value="orders">
