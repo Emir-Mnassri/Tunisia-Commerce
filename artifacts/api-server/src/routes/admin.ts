@@ -1,16 +1,29 @@
 import { Router, type IRouter } from "express";
 import { db, ordersTable, productsTable, categoriesTable } from "@workspace/db";
-import { eq, desc, count, sum, sql } from "drizzle-orm";
+import { eq, desc, count, sum, sql, and } from "drizzle-orm";
 import { z } from "zod";
 import { adminAuth } from "../middlewares/admin-auth";
 
 const router: IRouter = Router();
 
+/**
+ * SECURITY: All routes under /admin require authentication.
+ * Make sure your adminAuth middleware attaches 'user' to 'req'.
+ */
 router.use("/admin", adminAuth);
+
+// ─── HELPER: Permission Guard ───────────────────────────────────────────────
+// This prevents Staff from performing destructive actions.
+const requireSuperAdmin = (req: any, res: any, next: any) => {
+  if (req.user?.role !== "SUPER_ADMIN") {
+    return res.status(403).json({ error: "Permission refusée : Super Admin requis" });
+  }
+  next();
+};
 
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
-router.get("/admin/stats", async (req, res): Promise<void> => {
+router.get("/admin/stats", async (req: any, res): Promise<void> => {
   try {
     const [ordersCount] = await db.select({ count: count() }).from(ordersTable);
     const [revenueRow] = await db.select({ total: sum(ordersTable.total) }).from(ordersTable);
@@ -32,15 +45,9 @@ router.get("/admin/stats", async (req, res): Promise<void> => {
       pendingOrders: Number(pendingRow?.count ?? 0),
       totalProducts: Number(productsCount?.count ?? 0),
       recentOrders: recentOrders.map((o) => ({
-        id: o.id,
-        customerName: o.customerName,
-        email: o.email,
-        governorate: o.governorate,
-        paymentMethod: o.paymentMethod,
-        status: o.status,
+        ...o,
         total: Number(o.total),
         createdAt: o.createdAt.toISOString(),
-        items: o.items,
       })),
     });
   } catch (err) {
@@ -49,266 +56,126 @@ router.get("/admin/stats", async (req, res): Promise<void> => {
   }
 });
 
-// ─── Orders ───────────────────────────────────────────────────────────────────
-
-router.get("/admin/orders", async (req, res): Promise<void> => {
-  try {
-    const orders = await db
-      .select()
-      .from(ordersTable)
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(100);
-
-    res.json(
-      orders.map((o) => ({
-        id: o.id,
-        customerName: o.customerName,
-        email: o.email,
-        phone: o.phone,
-        address: o.address,
-        governorate: o.governorate,
-        city: o.city,
-        paymentMethod: o.paymentMethod,
-        status: o.status,
-        subtotal: Number(o.subtotal),
-        shippingFee: Number(o.shippingFee),
-        total: Number(o.total),
-        items: o.items,
-        notes: o.notes ?? null,
-        flouciPaymentId: o.flouciPaymentId ?? null,
-        createdAt: o.createdAt.toISOString(),
-      })),
-    );
-  } catch (err) {
-    req.log.error({ err }, "Admin orders error");
-    res.status(500).json({ error: "Erreur interne" });
-  }
-});
-
-// ─── Products ─────────────────────────────────────────────────────────────────
-
-function formatAdminProduct(p: {
-  id: number; name: string; slug: string; description: string | null;
-  price: string; discountPrice: string | null; isOnSale: boolean;
-  imageUrl: string | null; categoryId: number | null; categoryName?: string | null;
-  stock: number; sku: string | null; featured: boolean; createdAt: Date;
-}) {
-  return {
-    id: p.id,
-    name: p.name,
-    slug: p.slug,
-    description: p.description ?? null,
-    price: Number(p.price),
-    discountPrice: p.discountPrice != null ? Number(p.discountPrice) : null,
-    isOnSale: p.isOnSale,
-    imageUrl: p.imageUrl ?? null,
-    categoryId: p.categoryId ?? null,
-    categoryName: p.categoryName ?? null,
-    stock: p.stock,
-    sku: p.sku ?? null,
-    featured: p.featured,
-    createdAt: p.createdAt.toISOString(),
-  };
-}
-
-router.get("/admin/products", async (req, res): Promise<void> => {
-  try {
-    const rows = await db
-      .select({
-        id: productsTable.id,
-        name: productsTable.name,
-        slug: productsTable.slug,
-        description: productsTable.description,
-        price: productsTable.price,
-        discountPrice: productsTable.discountPrice,
-        isOnSale: productsTable.isOnSale,
-        imageUrl: productsTable.imageUrl,
-        categoryId: productsTable.categoryId,
-        categoryName: categoriesTable.name,
-        stock: productsTable.stock,
-        sku: productsTable.sku,
-        featured: productsTable.featured,
-        createdAt: productsTable.createdAt,
-      })
-      .from(productsTable)
-      .leftJoin(categoriesTable, eq(productsTable.categoryId, categoriesTable.id))
-      .orderBy(desc(productsTable.createdAt));
-
-    res.json(rows.map(formatAdminProduct));
-  } catch (err) {
-    req.log.error({ err }, "Admin products error");
-    res.status(500).json({ error: "Erreur interne" });
-  }
-});
-
-// ─── Create product ───────────────────────────────────────────────────────────
+// ─── Create Product (Hardenened) ──────────────────────────────────────────────
 
 const CreateProductBody = z.object({
-  name: z.string().min(1),
-  slug: z.string().min(1).optional(),
-  description: z.string().optional().nullable(),
-  price: z.number().positive(),
+  name: z.string().trim().min(2).max(100),
+  description: z.string().trim().optional().nullable(),
+  price: z.number().positive().finite(),
   discountPrice: z.number().positive().optional().nullable(),
-  isOnSale: z.boolean().optional().default(false),
-  imageUrl: z.string().optional().nullable(),
-  stock: z.number().int().min(0).default(0),
-  sku: z.string().optional().nullable(),
-  featured: z.boolean().optional().default(false),
+  isOnSale: z.boolean().default(false),
+  imageUrl: z.string().url().optional().nullable(), // Validates it's a real URL
+  stock: z.number().int().min(0),
+  sku: z.string().trim().toUpperCase().optional().nullable(),
   categoryId: z.number().int().optional().nullable(),
-});
+}).refine(
+  (data) => !data.discountPrice || (data.discountPrice < data.price),
+  { message: "Le prix de promo doit être inférieur au prix de base", path: ["discountPrice"] }
+);
 
-router.post("/admin/products", async (req, res): Promise<void> => {
+router.post("/admin/products", requireSuperAdmin, async (req: any, res): Promise<void> => {
   const parsed = CreateProductBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: parsed.error.issues[0].message });
     return;
   }
+
   try {
     const d = parsed.data;
-    const slug = d.slug ?? d.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") + "-" + Date.now();
+    // Stronger slug generation
+    const slug = d.name.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove accents
+      .replace(/[^a-z0-9]/g, "-")
+      .replace(/-+/g, "-") + "-" + Math.random().toString(36).substring(2, 7);
+
     const [product] = await db
       .insert(productsTable)
       .values({
-        name: d.name,
+        ...d,
         slug,
-        description: d.description ?? null,
         price: d.price.toFixed(3),
-        discountPrice: d.discountPrice != null ? d.discountPrice.toFixed(3) : null,
-        isOnSale: d.isOnSale ?? false,
-        imageUrl: d.imageUrl ?? null,
-        stock: d.stock ?? 0,
-        sku: d.sku ?? null,
-        featured: d.featured ?? false,
-        categoryId: d.categoryId ?? null,
+        discountPrice: d.discountPrice?.toFixed(3) ?? null,
       })
       .returning();
-    res.status(201).json(formatAdminProduct({ ...product, categoryName: null }));
+
+    res.status(201).json(product);
   } catch (err) {
     req.log.error({ err }, "Admin create product error");
-    res.status(500).json({ error: "Erreur interne" });
+    res.status(500).json({ error: "Erreur lors de la création" });
   }
 });
 
-// ─── Update product ───────────────────────────────────────────────────────────
+// ─── Update Product (Hardened) ───────────────────────────────────────────────
 
-const UpdateProductBody = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional().nullable(),
-  price: z.number().positive().optional(),
-  discountPrice: z.number().positive().optional().nullable(),
-  isOnSale: z.boolean().optional(),
-  imageUrl: z.string().optional().nullable(),
-  stock: z.number().int().min(0).optional(),
-  sku: z.string().optional().nullable(),
-  featured: z.boolean().optional(),
-  categoryId: z.number().int().optional().nullable(),
-});
-
-router.put("/admin/products/:id", async (req, res): Promise<void> => {
+router.put("/admin/products/:id", requireSuperAdmin, async (req: any, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID invalide" }); return; }
 
-  const parsed = UpdateProductBody.safeParse(req.body);
+  const parsed = CreateProductBody.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   try {
     const d = parsed.data;
-    const update: Record<string, unknown> = {};
-    if (d.name !== undefined) update.name = d.name;
-    if (d.description !== undefined) update.description = d.description;
-    if (d.price !== undefined) update.price = d.price.toFixed(3);
-    if (d.discountPrice !== undefined) update.discountPrice = d.discountPrice != null ? d.discountPrice.toFixed(3) : null;
-    if (d.isOnSale !== undefined) update.isOnSale = d.isOnSale;
-    if (d.imageUrl !== undefined) update.imageUrl = d.imageUrl;
-    if (d.stock !== undefined) update.stock = d.stock;
-    if (d.sku !== undefined) update.sku = d.sku;
-    if (d.featured !== undefined) update.featured = d.featured;
-    if (d.categoryId !== undefined) update.categoryId = d.categoryId;
+    const updateData: any = { ...d };
+    
+    // Convert numbers back to string decimals for Drizzle/DB compatibility
+    if (d.price) updateData.price = d.price.toFixed(3);
+    if (d.discountPrice) updateData.discountPrice = d.discountPrice.toFixed(3);
 
     const [product] = await db
       .update(productsTable)
-      .set(update)
+      .set(updateData)
       .where(eq(productsTable.id, id))
       .returning();
 
-    if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
-    res.json(formatAdminProduct({ ...product, categoryName: null }));
+    if (!product) { res.status(404).json({ error: "Produit non trouvé" }); return; }
+    res.json(product);
   } catch (err) {
     req.log.error({ err }, "Admin update product error");
-    res.status(500).json({ error: "Erreur interne" });
+    res.status(500).json({ error: "Erreur lors de la modification" });
   }
 });
 
-// ─── Quick stock patch ────────────────────────────────────────────────────────
+// ─── Stock Patch (Safe for Staff) ────────────────────────────────────────────
 
-const StockPatchBody = z.object({
-  delta: z.number().int(),
-});
-
-router.patch("/admin/products/:id/stock", async (req, res): Promise<void> => {
+router.patch("/admin/products/:id/stock", async (req: any, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "ID invalide" }); return; }
-
-  const parsed = StockPatchBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { delta } = req.body;
+  
+  if (isNaN(id) || typeof delta !== "number") {
+    res.status(400).json({ error: "Données invalides" });
+    return;
+  }
 
   try {
     const [product] = await db
       .update(productsTable)
-      .set({ stock: sql`GREATEST(0, ${productsTable.stock} + ${parsed.data.delta})` })
+      .set({ 
+        stock: sql`GREATEST(0, ${productsTable.stock} + ${delta})` 
+      })
       .where(eq(productsTable.id, id))
-      .returning({ id: productsTable.id, stock: productsTable.stock });
+      .returning();
 
-    if (!product) { res.status(404).json({ error: "Produit introuvable" }); return; }
     res.json(product);
   } catch (err) {
-    req.log.error({ err }, "Admin patch stock error");
-    res.status(500).json({ error: "Erreur interne" });
+    res.status(500).json({ error: "Erreur stock" });
   }
 });
 
-// ─── Delete product ───────────────────────────────────────────────────────────
+// ─── Delete Product (Super Admin Only) ────────────────────────────────────────
 
-router.delete("/admin/products/:id", async (req, res): Promise<void> => {
+router.delete("/admin/products/:id", requireSuperAdmin, async (req: any, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "ID invalide" }); return; }
   try {
     const [deleted] = await db
       .delete(productsTable)
       .where(eq(productsTable.id, id))
-      .returning({ id: productsTable.id });
-    if (!deleted) { res.status(404).json({ error: "Produit introuvable" }); return; }
+      .returning();
+    
+    if (!deleted) return res.status(404).json({ error: "Introuvable" });
     res.json({ success: true });
   } catch (err) {
-    req.log.error({ err }, "Admin delete product error");
-    res.status(500).json({ error: "Erreur interne" });
-  }
-});
-
-// ─── Order status update ───────────────────────────────────────────────────────
-
-const UpdateOrderStatusBody = z.object({
-  status: z.enum(["pending", "awaiting_payment", "paid", "shipped", "delivered", "cancelled"]),
-});
-
-router.put("/admin/orders/:id/status", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "ID invalide" }); return; }
-
-  const parsed = UpdateOrderStatusBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-
-  try {
-    const [order] = await db
-      .update(ordersTable)
-      .set({ status: parsed.data.status })
-      .where(eq(ordersTable.id, id))
-      .returning({ id: ordersTable.id, status: ordersTable.status });
-    if (!order) { res.status(404).json({ error: "Commande introuvable" }); return; }
-    res.json(order);
-  } catch (err) {
-    req.log.error({ err }, "Admin update order status error");
-    res.status(500).json({ error: "Erreur interne" });
+    res.status(500).json({ error: "Erreur suppression" });
   }
 });
 
